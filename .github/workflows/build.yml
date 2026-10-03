@@ -1,0 +1,75 @@
+name: build
+
+# Builds ghcr.io/<owner>/tailscale on push, on demand, and daily when Tailscale
+# releases a new stable version.
+on:
+  push:
+    branches: [master]
+    paths-ignore: ["**.md"]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Tailscale release tag, e.g. v1.102.5 (empty = latest)
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.event_name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/tailscale
+    steps:
+      - name: Resolve version
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api repos/tailscale/tailscale/releases/latest --jq .tag_name)"
+          v="${INPUT:-$latest}"
+          [[ "$v" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          build=true
+          if ! curl -fsS -o /dev/null "https://hub.docker.com/v2/repositories/tailscale/tailscale/tags/$v"; then
+            build=false
+            echo "tailscale/tailscale:$v is not on Docker Hub yet"
+          elif [ "$GITHUB_EVENT_NAME" = schedule ] \
+            && [ "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Image}}' 2>/dev/null \
+              | jq -r '."linux/amd64".config.Labels | "\(."org.opencontainers.image.version") \(."org.opencontainers.image.revision")"')" = "$v $GITHUB_SHA" ]; then
+            build=false
+            echo "$IMAGE:latest is already $v from this commit"
+          fi
+          tags="$IMAGE:$v"
+          [ "$v" = "$latest" ] && tags="$tags,$IMAGE:latest"
+          { echo "version=$v"; echo "tags=$tags"; echo "build=$build"; } >>"$GITHUB_OUTPUT"
+
+      - if: steps.v.outputs.build == 'true'
+        uses: docker/setup-qemu-action@v3
+      - if: steps.v.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.v.outputs.build == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - if: steps.v.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          build-args: TAILSCALE_VERSION=${{ steps.v.outputs.version }}
+          tags: ${{ steps.v.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+          push: true
