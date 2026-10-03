@@ -3,7 +3,7 @@
 [`tailscale/tailscale`](https://hub.docker.com/r/tailscale/tailscale) with JSON logs, rebuilt for every stable Tailscale release. Each tag is built from the upstream tag of the same name.
 
 ```
-ghcr.io/graphyte-labs/tailscale:<version>   # e.g. v1.102.5
+ghcr.io/graphyte-labs/tailscale:<version>   # e.g. v1.102.5 or 1.102.5
 ghcr.io/graphyte-labs/tailscale:latest
 ```
 

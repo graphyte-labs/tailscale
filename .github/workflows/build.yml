@@ -47,7 +47,7 @@ jobs:
             build=false
             echo "$IMAGE:latest is already $v from this commit"
           fi
-          tags="$IMAGE:$v"
+          tags="$IMAGE:$v,$IMAGE:${v#v}"
           [ "$v" = "$latest" ] && tags="$tags,$IMAGE:latest"
           { echo "version=$v"; echo "tags=$tags"; echo "build=$build"; } >>"$GITHUB_OUTPUT"
 
